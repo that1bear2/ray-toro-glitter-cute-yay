@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>ray toro glitter cute yay — Accounts & Images</title>
+    <style>
+        :root{--bg:#f0f2f5;--card:#fff;--accent:#1877f2;--muted:#65676b}
+        *{box-sizing:border-box}
+        body{margin:0;font-family:Inter,system-ui,Arial;background:var(--bg);padding:18px}
+        .wrap{max-width:1000px;margin:0 auto;display:grid;grid-template-columns:280px 1fr 280px;gap:18px}
+        .header{grid-column:1/-1;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+        .brand{font-weight:700;color:var(--accent)}
+        .card{background:var(--card);padding:14px;border-radius:10px;box-shadow:0 6px 18px rgba(0,0,0,0.06)}
+        .composer textarea{width:100%;min-height:84px;padding:10px;border-radius:8px;border:1px solid #e6e9ee}
+        .composer .row{display:flex;justify-content:space-between;align-items:center;margin-top:10px}
+        .btn{background:var(--accent);color:#fff;border:none;padding:8px 12px;border-radius:8px;cursor:pointer}
+        .btn.ghost{background:#eef4ff;color:var(--accent)}
+        .small{font-size:0.85rem;color:var(--muted)}
+        .feed{display:flex;flex-direction:column;gap:12px}
+        .post img{max-width:100%;border-radius:8px;margin-top:8px}
+        .meta{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+        .actions{display:flex;gap:8px}
+        .action-btn{background:transparent;border:1px solid transparent;padding:6px 8px;border-radius:8px;cursor:pointer}
+        .author{font-weight:600}
+        input[type=file]{display:block;margin-top:8px}
+        .preview{max-height:140px;object-fit:cover;border-radius:8px;margin-top:8px}
+        .signin input{width:100%;padding:8px;border-radius:6px;border:1px solid #e6e9ee;margin-bottom:8px}
+        .muted{color:var(--muted)}
+        @media (max-width:900px){.wrap{grid-template-columns:1fr} .header{flex-direction:column;align-items:flex-start} }
+    </style>
+</head>
+<body>
+    <div class="wrap">
+        <div class="header">
+            <div class="brand">ray toro glitter cute yay</div>
+            <div class="small muted">Enter username + Gmail to use your account</div>
+        </div>
+
+        <aside class="card signin">
+            <div id="signedOutUI">
+                <h4>Your account</h4>
+                <input id="usernameInput" placeholder="Username" aria-label="Username">
+                <input id="emailInput" placeholder="you@gmail.com" aria-label="Gmail address">
+                <button id="signInBtn" class="btn">Sign in</button>
+                <p class="small muted" style="margin-top:8px">Only Gmail addresses are accepted here for grouping okay.</p>
+            </div>
+            <div id="signedInUI" style="display:none">
+                <h4>Signed in</h4>
+                <div id="currentUserInfo" class="small"></div>
+                <div style="margin-top:10px">
+                    <button id="viewMineBtn" class="btn ghost">View: My posts</button>
+                    <button id="signOutBtn" class="btn" style="margin-left:8px">Sign out</button>
+                </div>
+            </div>
+        </aside>
+
+        <main>
+            <section class="card composer">
+                <textarea id="postInput" placeholder="What's on your mind?"></textarea>
+                <input id="imageInput" type="file" accept="image/*">
+                <img id="imagePreview" class="preview" style="display:none" alt="preview">
+                <div class="row" style="display:flex;justify-content:space-between;align-items:center;margin-top:8px">
+                    <div class="small" id="charCount">0</div>
+                    <div>
+                        <button id="clearBtn" class="btn ghost">Clear</button>
+                        <button id="postBtn" class="btn">Post</button>
+                    </div>
+                </div>
+            </section>
+
+            <section id="feed" class="feed" aria-live="polite"></section>
+        </main>
+
+        <aside class="card">
+            <h4>About</h4>
+            <p class="small muted">Posts and account info are stored locally (localStorage). Images are saved as data URLs in your browser.</p>
+        </aside>
+    </div>
+
+    <!-- Optional: Firebase SDK (used only if you provide FIREBASE_CONFIG in firebase-config.js) -->
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-firestore-compat.js"></script>
+    <!-- Load optional firebase-config.js (create public/firebase-config.js with your config) -->
+    <script src="/firebase-config.js"></script>
+    <script>
+        // To enable remote shared posts, replace null with your Firebase config object.
+        // Example:
+        // const FIREBASE_CONFIG = {
+        //   apiKey: "...",
+        //   authDomain: "...",
+        //   projectId: "...",
+        //   storageBucket: "...",
+        //   messagingSenderId: "...",
+        //   appId: "..."
+        // };
+        var FIREBASE_CONFIG = window.FIREBASE_CONFIG || null;
+
+        const POSTS_KEY = 'miniSocial.posts.v1';
+        const USER_KEY = 'miniSocial.currentUser.v1';
+        let remoteEnabled = false;
+        let db = null;
+
+        // DOM
+        const usernameInput = document.getElementById('usernameInput');
+        const emailInput = document.getElementById('emailInput');
+        const signInBtn = document.getElementById('signInBtn');
+        const signOutBtn = document.getElementById('signOutBtn');
+        const signedOutUI = document.getElementById('signedOutUI');
+        const signedInUI = document.getElementById('signedInUI');
+        const currentUserInfo = document.getElementById('currentUserInfo');
+        const viewMineBtn = document.getElementById('viewMineBtn');
+
+        const postInput = document.getElementById('postInput');
+        const imageInput = document.getElementById('imageInput');
+        const imagePreview = document.getElementById('imagePreview');
+        const postBtn = document.getElementById('postBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const charCount = document.getElementById('charCount');
+        const feedEl = document.getElementById('feed');
+
+        let posts = loadPosts();
+        let currentUser = loadUser();
+        let imageDataUrl = null;
+        let viewMode = 'mine'; // 'mine' or 'all'
+
+        // Initialize Firebase if user provided config
+        if(FIREBASE_CONFIG){
+            try{
+                firebase.initializeApp(FIREBASE_CONFIG);
+                db = firebase.firestore();
+                remoteEnabled = true;
+                // listen to remote posts collection
+                db.collection('posts').orderBy('time','desc').onSnapshot(snap=>{
+                    posts = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+                    // keep a local copy for offline preview
+                    try{ localStorage.setItem(POSTS_KEY, JSON.stringify(posts)); }catch(e){}
+                    renderPosts();
+                }, err=>{ console.warn('Firestore listen error', err); remoteEnabled=false; });
+            }catch(e){ console.warn('Firebase init failed', e); }
+        }
+
+        function loadPosts(){ try{ return JSON.parse(localStorage.getItem(POSTS_KEY) || '[]'); }catch(e){return []} }
+        function savePosts(){
+            try{ localStorage.setItem(POSTS_KEY, JSON.stringify(posts)); }catch(e){}
+            // if remote enabled, also persist to Firestore (best-effort)
+            if(remoteEnabled && db){
+                // ensure posts that aren't remote yet get added
+                posts.slice().reverse().forEach(async p => {
+                    if(!p._remote && (!p.id || p.id.length<8)){
+                        const copy = {...p}; delete copy.id; copy.time = copy.time || new Date().toISOString();
+                        const doc = await db.collection('posts').add(copy);
+                        // mark remote locally
+                    }
+                });
+            }
+        }
+        function loadUser(){ try{ return JSON.parse(localStorage.getItem(USER_KEY)); }catch(e){return null} }
+        function saveUser(u){ localStorage.setItem(USER_KEY, JSON.stringify(u)); }
+        function clearUser(){ localStorage.removeItem(USER_KEY); }
+
+        function renderAuth(){
+            if(currentUser){
+                signedOutUI.style.display='none'; signedInUI.style.display='block';
+                currentUserInfo.textContent = `${currentUser.username} • ${currentUser.email}`;
+                viewMineBtn.textContent = viewMode==='mine' ? 'View: My posts' : 'View: All posts';
+            } else {
+                signedOutUI.style.display='block'; signedInUI.style.display='none';
+            }
+            updateComposerState();
+            renderPosts();
+        }
+
+        function isGmail(email){ return /@gmail\.com\s*$/i.test(email); }
+
+        signInBtn.addEventListener('click', ()=>{
+            const u = usernameInput.value.trim();
+            const e = emailInput.value.trim();
+            if(!u){ alert('Enter a username'); return; }
+            if(!isGmail(e)){ alert('Please enter a Gmail address (example@gmail.com)'); return; }
+            currentUser = { username: u, email: e.toLowerCase() };
+            saveUser(currentUser);
+            usernameInput.value=''; emailInput.value='';
+            renderAuth();
+        });
+
+        signOutBtn.addEventListener('click', ()=>{ currentUser=null; clearUser(); renderAuth(); });
+        viewMineBtn.addEventListener('click', ()=>{ viewMode = viewMode==='mine' ? 'all' : 'mine'; renderAuth(); });
+
+        function updateComposerState(){
+            if(!currentUser){ postBtn.disabled=false; postBtn.textContent='Post (Sign in required)'; postBtn.style.opacity=0.6; }
+            else { postBtn.disabled=false; postBtn.textContent='Post'; postBtn.style.opacity=1; }
+        }
+
+        // Image handling
+        imageInput.addEventListener('change', async (e)=>{
+            const f = e.target.files && e.target.files[0];
+            if(!f) { imageDataUrl = null; imagePreview.style.display='none'; return; }
+            if(!f.type.startsWith('image/')){ alert('Please select an image file'); return; }
+            const data = await readFileAsDataURL(f);
+            imageDataUrl = data;
+            imagePreview.src = data; imagePreview.style.display='block';
+        });
+        function readFileAsDataURL(file){ return new Promise((res, rej)=>{ const r=new FileReader(); r.onload=()=>res(r.result); r.onerror=rej; r.readAsDataURL(file); }); }
+
+        // posts
+        async function createPost(){
+            if(!currentUser){ alert('Sign in with username and Gmail to post.'); return; }
+            const text = postInput.value.trim();
+            if(!text && !imageDataUrl) { alert('Write something or attach an image'); return; }
+            const p = { content: text, time: new Date().toISOString(), likes:0, comments:[], image: imageDataUrl, author: { username: currentUser.username, email: currentUser.email } };
+            if(remoteEnabled && db){
+                try{
+                    await db.collection('posts').add(p);
+                }catch(e){ alert('Failed to post remotely — saved locally.'); posts.unshift({ id: Date.now().toString(), ...p }); savePosts(); }
+            } else {
+                posts.unshift({ id: Date.now().toString(), ...p }); savePosts();
+            }
+            postInput.value=''; imageInput.value=null; imageDataUrl=null; imagePreview.style.display='none'; charCount.textContent='0';
+            renderPosts();
+        }
+
+        function renderPosts(){
+            feedEl.innerHTML='';
+            let list = posts.slice();
+            if(currentUser && viewMode==='mine') list = list.filter(p=>p.author && p.author.email===currentUser.email);
+            if(list.length===0){ const e=document.createElement('div'); e.className='card small muted'; e.textContent='No posts to show.'; feedEl.appendChild(e); return; }
+            for(const post of list){
+                const el = document.createElement('article'); el.className='card post';
+                const meta = document.createElement('div'); meta.className='meta';
+                const left = document.createElement('div'); left.innerHTML=`<div class="author">${escapeHtml(post.author?.username||'Anonymous')}</div><div class="small muted">${escapeHtml(post.author?.email||'')}</div>`;
+                const right = document.createElement('div'); right.className='actions';
+                const like = document.createElement('button'); like.className='action-btn'; like.textContent = `❤ ${post.likes||0}`; like.onclick = ()=>{ toggleLike(post.id); };
+                const comm = document.createElement('button'); comm.className='action-btn'; comm.textContent = `💬 ${post.comments.length}`; comm.onclick = ()=>{ const c = el.querySelector('.comments'); if(c) c.classList.toggle('hidden'); };
+                const del = document.createElement('button'); del.className='action-btn'; del.textContent='Delete'; del.onclick = ()=>{ if(!currentUser||post.author.email!==currentUser.email){ alert('You can only delete your own posts'); return; } if(confirm('Delete this post?')){ deletePost(post.id); } };
+                right.appendChild(like); right.appendChild(comm); right.appendChild(del);
+                meta.appendChild(left); meta.appendChild(right);
+                el.appendChild(meta);
+                if(post.content){ const c=document.createElement('div'); c.className='content'; c.textContent = post.content; el.appendChild(c); }
+                if(post.image){ const img=document.createElement('img'); img.src = post.image; img.alt='attached image'; el.appendChild(img); }
+                // comments
+                const commentsWrap = document.createElement('div'); commentsWrap.className='comments';
+                const listEl = document.createElement('div'); for(const cm of post.comments){ const ce=document.createElement('div'); ce.className='comment small'; ce.innerHTML = `<div class="small muted">${timeAgo(new Date(cm.time))}</div><div>${escapeHtml(cm.text)}</div>`; listEl.appendChild(ce); }
+                const input = document.createElement('input'); input.placeholder='Write a comment...'; input.style.width='100%'; input.style.marginTop='8px';
+                const btn = document.createElement('button'); btn.className='btn'; btn.textContent='Comment'; btn.style.marginTop='8px'; btn.onclick = ()=>{ const t=input.value.trim(); if(!t) return; addComment(post.id,t); input.value=''; };
+                commentsWrap.appendChild(listEl); commentsWrap.appendChild(input); commentsWrap.appendChild(btn);
+                el.appendChild(commentsWrap);
+                feedEl.appendChild(el);
+            }
+        }
+
+        async function toggleLike(id){
+            const p = posts.find(x=>x.id===id);
+            if(!p) return;
+            if(remoteEnabled && db && id && id.length>8){
+                const ref = db.collection('posts').doc(id);
+                await ref.update({ likes: (p.likes||0) + 1 });
+            } else {
+                p.likes = (p.likes||0) + 1; savePosts();
+            }
+            renderPosts();
+        }
+        async function addComment(id,text){
+            const p=posts.find(x=>x.id===id);
+            if(!p) return;
+            const cm = { id:Date.now().toString(), text, time:new Date().toISOString() };
+            if(remoteEnabled && db && id && id.length>8){
+                const ref = db.collection('posts').doc(id);
+                await ref.update({ comments: firebase.firestore.FieldValue.arrayUnion(cm) });
+            } else {
+                p.comments.push(cm); savePosts();
+            }
+            renderPosts();
+        }
+        async function deletePost(id){
+            if(remoteEnabled && db && id && id.length>8){
+                await db.collection('posts').doc(id).delete();
+            } else {
+                posts = posts.filter(p=>p.id!==id); savePosts();
+            }
+            renderPosts();
+        }
+
+        function escapeHtml(s){ return String(s||'').replace(/[&<>"']/g, ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":"&#39;"}[ch])); }
+        function timeAgo(d){ const s=Math.floor((Date.now()-d.getTime())/1000); if(s<5) return 'just now'; if(s<60) return s+'s'; const m=Math.floor(s/60); if(m<60) return m+'m'; const h=Math.floor(m/60); if(h<24) return h+'h'; return Math.floor(h/24)+'d'; }
+
+        // events
+        postBtn.addEventListener('click', createPost);
+        clearBtn.addEventListener('click', ()=>{ postInput.value=''; imageInput.value=null; imagePreview.style.display='none'; imageDataUrl=null; charCount.textContent='0'; });
+        postInput.addEventListener('input', ()=>{ charCount.textContent = postInput.value.length; });
+        postInput.addEventListener('keydown', (e)=>{ if((e.ctrlKey||e.metaKey) && e.key==='Enter') createPost(); });
+
+        // init
+        renderAuth();
+        renderPosts();
+    </script>
+</body>
+</html>
